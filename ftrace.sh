@@ -20,16 +20,6 @@ function function_trace_cleanup()
 	echo > set_graph_function
 	echo 10 > tracing_thresh
 }
-function graph_trace_cleanup()
-{
-	echo "graph trace cleanup...."
-	echo 0 > tracing_on
-	echo nop > current_tracer
-	echo > set_graph_function
-
-	echo 1 > options/funcgraph-irqs || true
-	echo 0 > max_graph_depth
-}
 
 
 option=${1:-}
