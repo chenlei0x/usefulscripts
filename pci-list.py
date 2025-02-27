@@ -76,6 +76,15 @@ def parse_str_mul_line_kv(content: str, key_translate_table=None, delimiter=':')
     return ret_dict
 
 class PciDevInfo:
+    @property
+    def driver(self):
+        driver_file = f"/sys/bus/pci/devices/{self.dbdf}/driver"
+        if os.path.islink(driver_file):
+            driver = os.path.basename(os.readlink(driver_file))
+            return driver
+
+        return "none"
+
     def __init__(self, dbdf:str):
         self.pci_class = str()
         self.vendor_id = str()
@@ -91,7 +100,6 @@ class PciDevInfo:
         self.device_str = str()
         self.sub_vendor_str = str()
         self.sub_device_str = str()
-        self.driver = str()
         self.scsi_host = []
         self.eth_nic = str()
 
@@ -155,8 +163,6 @@ class PciDevInfo:
         pci_dev_info = parse_str_mul_line_kv(stdout, key_key_translate_table)
         self.__dict__.update(pci_dev_info)
 
-        _, driver_in_use, _ = run_shell_cmd(f"lspci -v -s {self.dbdf} | grep 'driver in use'")
-        self.driver = driver_in_use.split(":")[1].strip()
 
         if self.pci_class.startswith(class_code_storage_controller):
             scsi_host_path = "/sys/class/scsi_host"
