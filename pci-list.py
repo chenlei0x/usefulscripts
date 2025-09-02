@@ -4,7 +4,6 @@
 
 import subprocess
 import os
-import platform
 import sys
 test_output =  '''
 '''
@@ -30,7 +29,6 @@ def run_shell_cmd(cmd, exit_on_error=True, debug=False):
 
     return ret, stdout, stderr
 
-import re
 
 
 class_code_net_controller = "02"
@@ -189,12 +187,27 @@ class PciDevInfo:
                         # print(f"{self.bdf}", entry.name, f"driver: {self.driver}")
                         self.eth_nic = entry.name
                         break
+    def is_vf(self):
+        physfn = f"/sys/bus/pci/devices/{self.dbdf}/physfn"
+        return os.path.exists(physfn)
 
+    def get_vf_list(self):
+        ret_list = []
+        sriov_numvfs_path = f"/sys/bus/pci/devices/{self.dbdf}/sriov_numvfs"
+        if not os.path.exists(sriov_numvfs_path):
+            return ret_list
+        with open(sriov_numvfs_path, 'r') as f:
+            num_vfs = int(f.read())
 
+        for vf_soft_link in [ "virtfn{}".format(i) for i in range(0, num_vfs) ]:
+            _path = f"/sys/bus/pci/devices/{self.dbdf}/{vf_soft_link}"
+            _link = os.readlink(_path)
+            ret_list.append(os.path.basename(_link))
+        return ret_list
 
 class Pci:
     @classmethod
-    def get_pci_dev_list(cls, class_filter:str):
+    def get_pci_dev_list(cls, class_filter:str, only_pf:bool):
         pci_dev_list = []
         if class_filter == "storage":
             class_filter_list = [class_code_storage_controller]
@@ -211,7 +224,10 @@ class Pci:
             if class_code[:2] not in class_filter_list:
                 continue
 
-            pci_dev_list.append(PciDevInfo(dbdf=dbdf))
+            pdev = PciDevInfo(dbdf=dbdf)
+            if only_pf and pdev.is_vf():
+                continue
+            pci_dev_list.append(pdev)
         return pci_dev_list
 
 
@@ -228,20 +244,27 @@ class Mod:
             
 
 def main():
-    pci_dev_list = Pci.get_pci_dev_list("storage")
+    pci_dev_list = Pci.get_pci_dev_list("storage", only_pf=True)
     print("{:^16}{:^32}{:^16}".format("SLOT", "DRIVER", "SCSI_Host"))
     for d in pci_dev_list:
         driver_version = Mod(d.driver).version
         driver_string = f"{d.driver}({driver_version})"
-        print("{:^16}{:^32}{:<16}".format(d.dbdf, driver_string, str(d.scsi_host)))
+        print("{:<16}{:<32}{}".format(d.dbdf, driver_string, str(d.scsi_host)))
 
     print("")
-    pci_dev_list = Pci.get_pci_dev_list("nic")
+    pci_dev_list = Pci.get_pci_dev_list("nic", only_pf=True)
     print("{:^16}{:^32}{:^16}".format("SLOT", "DRIVER", "ETH_NIC"))
     for d in pci_dev_list:
         driver_version = Mod(d.driver).version
         driver_string = f"{d.driver}({driver_version})"
-        print("{:^16}{:^32}{:<16}".format(d.dbdf, driver_string, d.eth_nic))
+        print("{:<16}{:<32}{}".format(d.dbdf, driver_string, d.eth_nic))
+        for vf in d.get_vf_list():
+            pci_vf_dev = PciDevInfo(vf)
+            driver_version = Mod(pci_vf_dev.driver).version
+            driver_string = f"{pci_vf_dev.driver}({driver_version})"
+            print("  {:<14}  {:<32}{}".format(
+                pci_vf_dev.dbdf, driver_string, pci_vf_dev.eth_nic))
+
 
 if __name__ == "__main__":
     main()
